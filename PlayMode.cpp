@@ -35,17 +35,35 @@ Load< Scene > hexapod_scene(LoadTagDefault, []() -> Scene const * {
 	});
 });
 
-Load< Sound::Sample > dusty_floor_sample(LoadTagDefault, []() -> Sound::Sample const * {
-	return new Sound::Sample(data_path("dusty-floor.opus"));
+Load< Sound::Sample > musicClip1(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("music1.opus"));
+});
+
+Load< Sound::Sample > musicClip2(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("music2.opus"));
+});
+
+Load< Sound::Sample > musicClip3(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("music3.opus"));
+});
+
+Load< Sound::Sample > correctSE(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("correct.opus"));
+});
+
+Load< Sound::Sample > wrongSE(LoadTagDefault, []() -> Sound::Sample const * {
+	return new Sound::Sample(data_path("wrong.opus"));
 });
 
 PlayMode::PlayMode() : scene(*hexapod_scene) {
 	carrots = std::vector<Scene::Transform *>(carrotNum);
 	//get pointers for convenience:
 	for (auto &transform : scene.transforms) {
-		std::cout << "(" << transform.name <<  ")" << std::endl;
+		//std::cout << "(" << transform.name <<  ")" << std::endl;
 		// mouse
 		if (transform.name == "water opossum ") mouse = &transform;
+		// ball
+		else if (transform.name == "Sphere.001") ball = &transform;
 		// carrots
 		else if (transform.name.find("carrot") !=std::string::npos){
 			// add carrot in the right order (same as its name)
@@ -63,14 +81,8 @@ PlayMode::PlayMode() : scene(*hexapod_scene) {
 	//get pointer to camera for convenience:
 	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
 	camera = &scene.cameras.front();
-
-	// disable mouse
-	if (SDL_GetRelativeMouseMode() == SDL_FALSE) 
-		SDL_SetRelativeMouseMode(SDL_TRUE);
-
-	auto carrotWorldMat = carrots[0]->make_local_to_world();
-	glm::vec3 carrotWorldPos(carrotWorldMat[3][0], carrotWorldMat[3][1],carrotWorldMat[3][2]);
-	leg_tip_loop = Sound::loop_3D(*dusty_floor_sample, 1.0f, carrotWorldPos);
+	
+	ball->colorModifier = ballDefaultColor;
 
 }
 
@@ -99,7 +111,6 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			down.downs += 1;
 			down.pressed = true;
 			// ever moving backward will leak the chemical poison into your stomach. then you will die at the end :)
-			winning = false;
 			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
@@ -129,126 +140,215 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 	return false;
 }
 
-void PlayMode::checkCarrotIndex(){
-	// if no current carrot, pick one and start rise
-	if (curCarrotIndex == 30){
-		// rejection sampling
-		while(curCarrotIndex == 30){
-			curCarrotIndex = rand() % carrotNum;
-			if(collected[curCarrotIndex])
-				curCarrotIndex = 30;
-		}
-		carrotRising = true;
-		curCarrotRiseAmount = 0;
-	}
-}
-
-void PlayMode::riseCarrot(float elapsed){
-	// not high enough
-	if(curCarrotRiseAmount <= carrotRiseAmountMax){
-		curCarrotRiseAmount += elapsed * carrotRiseSpeed;
-		carrots[curCarrotIndex]->position.y = currotOriginalHeight + curCarrotRiseAmount;
-		// add a flashing color effect when rising
-		std::chrono::time_point<std::chrono::system_clock> now = std::chrono::system_clock::now();
-		auto duration = now.time_since_epoch();
-		auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-		// flash
-		if (millis % (carrot_flash_interval*2) > carrot_flash_interval)
-			carrots[curCarrotIndex]->colorModifier = glm::vec3(0.3f,0,0);
-		else
-			carrots[curCarrotIndex]->colorModifier = glm::vec3(0,0.3f,0);
-	}
-	// rised to position
-	else {
-		carrotRising = false;
-		// set color modifier
-		carrots[curCarrotIndex]->colorModifier = glm::vec3(0.5,0.5,0);
-	}
-}
-
 void PlayMode::collectCarrot(uint16_t index){
-	// set carrots invisible
-	carrots[index]->position.z = 5000;
-	// set as colected
-	collected[index] = true;
-	// speed up
-	if (changeSpeedFactor < 10){
-		changeSpeedFactor += 1;	// color change faster
-		moveSpeed += 8;
-		ratateSpeed += 8;
+	//std::cout << "collecting "<<index <<std::endl;
+	// correct
+	if(index == corrrectCarrotIndex){
+		lastWasCorrect = true;
+		// set carrots "invisible"
+		carrots[index]->position.z = 5000;
+		// set as colected
+		collected[index] = true;
+		carrotsNeeded -= 1;
+		// play se
+		Sound::play_3D(*correctSE, 0.4f, carrotWorldPos(index));
+		// make harder
+		changeCarrotInterval -= 0.125f;
+		displayText = 2;
 	}
-	// reset values
-	curCarrotIndex = 30;
+	// wrong
+	else{
+		Sound::play_3D(*wrongSE, .6f, carrotWorldPos(index));
+		lastWasCorrect = false;
+		displayText = 1;
+	}
+	// reset color effect
+	for (auto c : carrots){
+		c->colorModifier = glm::vec3(0);
+	}
+}
+
+void PlayMode::showCorrectCarrot(float elapsed){
+	carrotBlinkModifier += elapsed ;
+	carrotBlinkModifier -= std::floor(carrotBlinkModifier);
+	carrots[corrrectCarrotIndex]->colorModifier = glm::vec3(
+		std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (carrotBlinkModifier + 0.0f / 3.0f) ) ) ))) /255.0f,
+		std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (carrotBlinkModifier + 1.0f / 3.0f) ) ) ))) /255.0f,
+		std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (carrotBlinkModifier + 2.0f / 3.0f) ) ) ))) /255.0f
+	);
 }
 
 bool PlayMode::gameOver(){
-	for (size_t i =0; i <carrots.size(); i++){
-		if(!collected[i])
-			return false;
-	}
-	return true;
+	if(carrotsNeeded<=0)
+		return true;
+	else
+		return false;
 }
 
-void PlayMode::playEndGameAnim(float elapsed){
-	bool startFall=false;
-	// first scale up
-	float scaleSpeed = 3;
-	float scaleMax = 6;
-	if(mouse->scale.x < scaleMax){
-		mouse->scale.x += scaleSpeed * elapsed;
-		mouse->scale.y += scaleSpeed * elapsed;
-		mouse->scale.z += scaleSpeed * elapsed;
-	}
-	else{
-		if(! winning)
-			startFall = true;
-		else
-			displayGameOverText = 2;
-	}
-	// then fall down
-	if(startFall){
-		static float rotatedAmount = 0;
-		float rotateSpeed = 50;
-		if(rotatedAmount < 90){
-			rotatedAmount += elapsed * rotateSpeed;
-			auto fall_roration = glm::angleAxis(
-				glm::radians(rotatedAmount),
-				glm::vec3(0,1,0));
-			// combine rotation from offset and from player control 
-			mouse->rotation = fall_roration * mouse_move_roration * mouse_offset_rotation;
+void PlayMode::changeCarrot(float elapsed, bool reset){
+	static float timeOnCurrentCarrot = 0;
+	if(reset) timeOnCurrentCarrot = 0;
+	timeOnCurrentCarrot += elapsed;
+	// time to move to next carrot
+	if(timeOnCurrentCarrot >= changeCarrotInterval){
+		curCarrotIndex = (curCarrotIndex +1) % carrotNum;
+		// find the next non collected carrot
+		while(collected[curCarrotIndex]){
+			curCarrotIndex = (curCarrotIndex +1) % carrotNum;
 		}
-		// done with rotation, display game over text
-		else
-			displayGameOverText = 1;
+		timeOnCurrentCarrot =0;
 	}
+	// set pos of music
+	music->set_position(carrotWorldPos(curCarrotIndex));
+}
+
+void PlayMode::lightUpCurCarrot(){
+	for(size_t i =0; i<carrots.size(); i++){
+		//std::cout << curCarrotIndex << ",  " << i <<std::endl;
+		if(i == curCarrotIndex){
+			carrots[i]->colorModifier = lightUpColor;
+		}
+		else{
+			carrots[i]->colorModifier = glm::vec3(0,0,0);
+		}
+	}
+}
+
+void PlayMode::checkForStop(float elapsed){
+	static float timeOnThisRound = 0;
+	static bool musicPlaying = true;
+	timeOnThisRound += elapsed;
+	//stop music
+	if(musicPlaying && timeOnThisRound >= curMusicLength){
+		//std::cout<<"stop music\n";
+		music->stop();
+		corrrectCarrotIndex = curCarrotIndex;
+		musicPlaying = false;
+	}
+	// stop carrot light-up rotation
+	else if (timeOnThisRound >= curCarrotLightUpLenght){
+		//std::cout<<"stop light\n";
+		// move to next state
+		gameState = Selecting;
+		// reset color effects
+		for(auto & carrot : carrots){
+			carrot->colorModifier = toBeSelectColor;
+		}
+		ball->colorModifier = ballDefaultColor;
+		//carrots[corrrectCarrotIndex]->colorModifier = glm::vec3(1,0,0);
+		timeOnThisRound = 0;
+		musicPlaying = true;
+	}
+}
+
+inline float randFloatBetween(float min, float max){
+	return min + static_cast <float> (rand()) /( static_cast <float> (RAND_MAX/(max-min)));
+}
+
+glm::vec3 PlayMode::carrotWorldPos(size_t index){
+	auto carrotWorldMat = carrots[index]->make_local_to_world();
+	return glm::vec3(carrotWorldMat[3][0], carrotWorldMat[3][1],carrotWorldMat[3][2]);
+}
+
+void PlayMode::setUpNextRound(){
+	// decide the timings
+	curMusicLength = randFloatBetween(musicLengthInterval[0], musicLengthInterval[1]);
+	curCarrotLightUpLenght = curMusicLength + randFloatBetween(lightUpExtraTime[0],lightUpExtraTime[1]);
+	//std::cout << "starting next round. music: " << curMusicLength << ", lightup: " << curCarrotLightUpLenght <<std::endl;
+	// start to play music
+	// randomly choose from the 3 musics
+	int m = rand()%3;
+	if(m==0) 		
+		music = Sound::play_3D(*musicClip1, 1.0f, carrotWorldPos(curCarrotIndex));
+	else if (m==1) 	
+		music = Sound::play_3D(*musicClip2, 1.0f, carrotWorldPos(curCarrotIndex));
+	else 			
+		music = Sound::play_3D(*musicClip3, 1.0f, carrotWorldPos(curCarrotIndex));
+	// change state
+	gameState = PlayingMusic;
 }
 
 void PlayMode::update(float elapsed) {
 
 	// --------- mouse color effect ------- //
-	if(changeSpeedFactor == 0)
-		mouse->colorModifier = glm::vec3(0);
-	else{
-		mouse_color_modifier += elapsed /10 * changeSpeedFactor;
-		mouse_color_modifier -= std::floor(mouse_color_modifier);
-		mouse->colorModifier = glm::vec3(
-			std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (mouse_color_modifier + 0.0f / 3.0f) ) ) ))) /255.0f,
-			std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (mouse_color_modifier + 1.0f / 3.0f) ) ) ))) /255.0f,
-			std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (mouse_color_modifier + 2.0f / 3.0f) ) ) ))) /255.0f
-		);
-	}
 
 	// check if game over
 	if(gameOver()){
-		playEndGameAnim(elapsed);
+		displayText = 3;
 		return;
 	}
 
-	// ---------- carrots ------------- //
-	checkCarrotIndex();
-	// rise carrot
-	riseCarrot(elapsed);
+	static bool reset = true;
 
+	// allow to move
+	playerMovement(elapsed);
+
+	// depends on diff game state
+
+	// -----  WAITING to start -----
+	if(gameState == WaitToStart){
+		// if wrong las time, show the correct carrot while waiting to start
+		if(!lastWasCorrect)
+			showCorrectCarrot(elapsed);
+		static float curWaitTime = 0;
+		curWaitTime += elapsed;
+		// time to start next round
+		if(curWaitTime >= waitTime){
+			setUpNextRound();
+			reset = true;
+			curWaitTime = 0;
+		}
+	}
+
+	// ----- PLAYING music -----
+	else if(gameState == PlayingMusic){
+		displayText = 10;
+		// ball blinking
+		ballBlinkModifier += elapsed ;
+		ballBlinkModifier -= std::floor(ballBlinkModifier);
+		ball->colorModifier = glm::vec3(
+			std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (ballBlinkModifier + 0.0f / 3.0f) ) ) ))) /255.0f,
+			std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (ballBlinkModifier + 1.0f / 3.0f) ) ) ))) /255.0f,
+			std::min(255,std::max(0,int32_t(255 * 0.5f * (0.5f + std::sin( 2.0f * M_PI * (ballBlinkModifier + 2.0f / 3.0f) ) ) ))) /255.0f
+		);
+		// carrots rotation
+		changeCarrot(elapsed, reset);
+		reset = false;
+		lightUpCurCarrot();
+		checkForStop(elapsed);
+	}
+
+	// ----- SELECT -----
+	else if (gameState == Selecting){
+		displayText = 0;
+		// check if any carrot in range
+		int selectedCarrotIndex = -1;
+		auto mouseWorldMat = mouse->make_local_to_world();
+		glm::vec3 mousePos(mouseWorldMat[3][0], mouseWorldMat[3][1],mouseWorldMat[3][2]);
+		for(size_t i =0; i<carrots.size(); i++){
+			glm::vec3 carrotPos = carrotWorldPos(i);
+			auto & carrot = carrots[i];
+			if (abs(mousePos.x - carrotPos.x) < 10 && abs(mousePos.y - carrotPos.y) < 10){
+				// change color and move up a bit
+				carrot->colorModifier = SelectedColor;
+				carrot->position.y = currotOriginalHeight + 2.0f;
+				// record this index
+				selectedCarrotIndex = (int)i;
+			}
+			else{
+				carrot->colorModifier = toBeSelectColor;
+				carrot->position.y = currotOriginalHeight;
+			}
+		}
+		// check for the pick up input (left click)
+		if (mouse_left && selectedCarrotIndex >= 0){
+			collectCarrot(selectedCarrotIndex);
+			gameState = WaitToStart;
+		}
+	}
+}
+
+void PlayMode::playerMovement(float elapsed){
 	// ---------- movement -------------- //
 	//combine inputs into a move:
 	glm::vec2 move = glm::vec2(0.0f);
@@ -283,40 +383,6 @@ void PlayMode::update(float elapsed) {
 	right.downs = 0;
 	up.downs = 0;
 	down.downs = 0;
-
-	// --------- pick up carrot ----------- //
-	popClickHint = false;
-	if (curCarrotIndex != 30 && !carrotRising){
-		// get the world position of mouse and carrot
-		auto mouseWorldMat = mouse->make_local_to_world();
-		glm::vec3 mouseWorldPos(mouseWorldMat[3][0], mouseWorldMat[3][1],mouseWorldMat[3][2]);
-		auto carrotWorldMat = carrots[curCarrotIndex]->make_local_to_world();
-		glm::vec3 carrotWorldPos(carrotWorldMat[3][0], carrotWorldMat[3][1],carrotWorldMat[3][2]);
-		//std::cout << "mouse: " << mouseWorldPos.x<< ", cr: " << carrotWorldPos.x <<std::endl;
-		// check if in range
-		if (abs(mouseWorldPos.x - carrotWorldPos.x) < 25 &&
-			abs(mouseWorldPos.y - carrotWorldPos.y) < 25)
-		{
-			// change carrot color
-			carrots[curCarrotIndex]->colorModifier = glm::vec3(0.6,0.0f,0.3f);
-			popClickHint = true;
-			// check for pick up input
-			if (mouse_left){
-				collectCarrot(curCarrotIndex);
-			}
-		}
-
-		for(auto & carrot : carrots){
-			auto carrotWorldM = carrot->make_local_to_world();
-			glm::vec3 carrotWorldPos(carrotWorldM[3][0], carrotWorldM[3][1],carrotWorldM[3][2]);
-			if (abs(mouseWorldPos.x - carrotWorldPos.x) < 10 &&
-				abs(mouseWorldPos.y - carrotWorldPos.y) < 10)
-				carrot->colorModifier = glm::vec3(0.0,1.0f,0.0f);
-			else
-				carrot->colorModifier = glm::vec3(0.0,0.0f,0.0f);
-		}
-	}
-
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -353,31 +419,42 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("WASD moves; escape ungrabs mouse",
+		lines.draw_text("WASD moves; left click to pick up",
 			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+			glm::vec3(H*1.5, 0.0f, 0.0f), glm::vec3(0.0f, H*1.5, 0.0f),
 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		
-		if(popClickHint && displayGameOverText == 0){
-			lines.draw_text("LEFT CLICK",
+		lines.draw_text("Need " + std::to_string(carrotsNeeded)+ " more carrots",
+			glm::vec3(-aspect + 0.1f * H + 0.1, -1.0 + 20 * H, 0.0),
+			glm::vec3(H*1.5, 0.0f, 0.0f), glm::vec3(0.0f, H*1.5, 0.0f),
+			glm::u8vec4(0xff, 0xff, 0xee, 0x00));
+
+		if( displayText == 0){
+			lines.draw_text("Go find the correct carrot NOW",
 				glm::vec3(-aspect + 0.1f * H , -1.0 + 0.1f * H + 0.2f, 0.0),
-				glm::vec3(0.5f, 0.0f, 0.0f), glm::vec3(0.0f, 0.5f, 0.0f),
+				glm::vec3(0.2f, 0.0f, 0.0f), glm::vec3(0.0f, 0.2f, 0.0f),
 				glm::u8vec4(0xff, 0xff, 0x00, 0x00));
 		}
-
-		// game over text
-		// lose
-		if(displayGameOverText == 1)
-			lines.draw_text("YOU DIE FROM CHEMICAL POISON",
+		else if(displayText == 1)
+			lines.draw_text("Should be the shining one",
 				glm::vec3(-aspect + 0.1f * H , -1.0 + 0.1f * H + 0.8f, 0.0),
-				glm::vec3(0.32f, 0.0f, 0.0f), glm::vec3(0.0f, 0.32f, 0.0f),
+				glm::vec3(0.3f, 0.0f, 0.0f), glm::vec3(0.0f, 0.3f, 0.0f),
 				glm::u8vec4(0xff, 0x00, 0x00, 0x00));
-		// win
-		else if (displayGameOverText == 2)
-			lines.draw_text("YOU BECOME SUPER CHEMICAL MOUSE",
+		else if(displayText == 2)
+			lines.draw_text("Correct !!!",
 				glm::vec3(-aspect + 0.1f * H , -1.0 + 0.1f * H + 0.8f, 0.0),
-				glm::vec3(0.3f, 0.0f, 0.0f), glm::vec3(0.0f, 0.32f, 0.0f),
+				glm::vec3(0.3f, 0.0f, 0.0f), glm::vec3(0.0f, 0.3f, 0.0f),
+				glm::u8vec4(0xff, 0x00, 0x00, 0x00));
+		else if (displayText == 3)
+			lines.draw_text("MISSION COMPLETE",
+				glm::vec3(-aspect + 0.f * H +0.2, -1.0 + 0.1f * H + 0.8f, 0.0),
+				glm::vec3(0.5f, 0.0f, 0.0f), glm::vec3(0.0f, 0.5f, 0.0f),
 				glm::u8vec4(0x00, 0x00, 0xff, 0x00));
+		else if (displayText == 11)
+			lines.draw_text("GET READY",
+				glm::vec3(-aspect + 0.1f * H , -1.0 + 0.1f * H + 0.8f, 0.0),
+				glm::vec3(0.3f, 0.0f, 0.0f), glm::vec3(0.0f, 0.3f, 0.0f),
+				glm::u8vec4(0xff, 0x00, 0x00, 0x00));
 
 	}
 }

@@ -1,18 +1,37 @@
-# (TODO: your game's title)
+# Music Lottery
 
-Author: (TODO: your name)
+Author: Chunan(Oscar) Huang
 
-Design: (TODO: In two sentences or fewer, describe what is new and interesting about your game.)
+### Design: 
+Carrots are being light-up one by one, along with a music.
+Music will stop at the middle, and you need to find out which carrot was light-up when the music stoped.
+(find the last light-up carrot when music stops)
 
-Screen Shot:
+
+### Screen Shot:
 
 ![Screen Shot](screenshot.png)
 
-How To Play:
+### How To Play:
 
-(TODO: describe the controls and (if needed) goals/strategy.)
+WASD to mouse, left click on mouse to collect carrot.
 
-Sources: (TODO: list a source URL for any assets you did not create yourself. Make sure you have a license for the asset.)
+### Sources: 
+##### 3d models:
+The main scene is adapted from garden.blend created by Yixin He.
+Model Credits: https://github.com/15-466/15-466-f21-base2/blob/main/scenes/CREDITS.txt
+##### sound & musics:
+correct sound effect:
+https://elements.envato.com/victory-DRKGYPE?utm_source=mixkit&utm_medium=referral&utm_campaign=elements_mixkit_cs_sfx_search_no_results&_ga=2.5332721.397766831.1632603381-1120883937.1632603381
+wrong sound effect:
+https://elements.envato.com/buzzer-wrong-answer-7DCT6NG
+music1:
+https://www.youtube.com/watch?v=Nz3PYpOcw9U
+music2:
+https://www.youtube.com/watch?v=fN8wmtbDAqM
+music3:
+https://www.youtube.com/watch?v=iLBBRuVDOo4
 
+Game developed from base code: https://github.com/15-466/15-466-f21-base3
 This game was built with [NEST](NEST.md).
 

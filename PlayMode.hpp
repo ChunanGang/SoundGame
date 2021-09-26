@@ -32,6 +32,7 @@ struct PlayMode : Mode {
 
 	// transform pointers
 	Scene::Transform *mouse = nullptr;
+	Scene::Transform *ball = nullptr;
 	std::vector<Scene::Transform *> carrots; 
 
 	// transform infos
@@ -41,36 +42,60 @@ struct PlayMode : Mode {
 	glm::vec2 mousePosMax = glm::vec2(-35, 119);
 	glm::vec2 mousePosMin = glm::vec2(-305, -61);
 
-	// game logic
-	const uint16_t carrotNum = 25;
-	bool collected[25] = {false};
-	uint16_t curCarrotIndex = 30; // current pickable carrot (30 means no curCarrot)
+	// ----- game logic -----
+	// carrot
+	const uint16_t carrotNum = 18;
+	bool collected[18] = {false};
+	uint16_t curCarrotIndex = 0; // current light-up carrot
+	uint16_t corrrectCarrotIndex = -1; // the carrot that should be picked
+	float changeCarrotInterval = 1.5f;
 	float currotOriginalHeight; 
-	bool carrotRising = false;
-	float carrotRiseSpeed = 5.0f;
-	float curCarrotRiseAmount = 0; // how much cur carrot has rised
-	const float carrotRiseAmountMax = 10.0f;
-	bool popClickHint = false;
-	uint16_t displayGameOverText=0; // 0 for no display, 1 for losing, 2 for winning
-	bool winning = true;
+	uint16_t carrotsNeeded = 10;
 	// mouse
-	float ratateSpeed = 70.0f; // degree
-	float moveSpeed = 40.0f;
+	float ratateSpeed = 120.0f; // degree
+	float moveSpeed = 100.0f;
+	// game play
+	enum GameState{
+		PlayingMusic = 0,
+		Selecting = 1,
+		WaitToStart = 2,
+	};
+	GameState gameState = WaitToStart;
+	float waitTime = 3.0f; // how long to wait before srating next round
+	uint16_t displayText=11; 
+	bool winning = true;
+	glm::vec2 musicLengthInterval = glm::vec2(5.0f, 12.0f); // how long will the music play: (min, max)
+	glm::vec2 lightUpExtraTime = glm::vec2(2.0f, 6.0f); // how long will the carrots keep being lightup after music stoped
+	float curMusicLength;	// how long music play
+	float curCarrotLightUpLenght;	// hopw long carrots are on light-up rotation
 
-	// game logic - functions
-	void checkCarrotIndex();
-	void riseCarrot(float elapsed);
+	// ----- game logic - functions -----
+	void playerMovement(float elapsed);
 	void collectCarrot(uint16_t index);
 	bool gameOver();
-	void playEndGameAnim(float elapsed);
+	void changeCarrot(float elapsed, bool reset);
+	void lightUpCurCarrot();
+	void setUpNextRound();
+	void checkForStop(float elapsed);
+	bool lastWasCorrect = true;
+	void showCorrectCarrot(float elapsed);
+	// helper
+	glm::vec3 carrotWorldPos(size_t index);
 
-	// mouse color effect
+	// color effect
 	float mouse_color_modifier = 0.0f;
-	uint16_t changeSpeedFactor = 0;
-	// carrot color effect
-	uint32_t carrot_flash_interval = 100; // flash every this much ms
+	// carrot colors
+	const glm::vec3 lightUpColor = glm::vec3(0,1,1);
+	const glm::vec3 toBeSelectColor = glm::vec3(0.1,0.2,0.2);
+	const glm::vec3 SelectedColor = glm::vec3(0,0,1);
+	// ball color
+	const glm::vec3 ballDefaultColor = glm::vec3(0.1,0.2,0.4);
+	// 
+	float carrotBlinkModifier = 0.0f;
+	float ballBlinkModifier = 0.0f;
+	
 
-	std::shared_ptr< Sound::PlayingSample > leg_tip_loop;
+	std::shared_ptr< Sound::PlayingSample > music;
 	
 	//camera:
 	Scene::Camera *camera = nullptr;
